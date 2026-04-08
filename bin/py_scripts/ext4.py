@@ -528,7 +528,7 @@ class Volume:
         raw = self.read(offset, ctypes.sizeof(structure))
 
         if hasattr(structure, "_from_buffer_copy"):
-            return structure._from_buffer_copy(raw, platform64=platform64 if platform64 != None else self.platform64)
+            return structure._from_buffer_copy(raw, platform64=platform64 if platform64 is not None else self.platform64)
         else:
             return structure.from_buffer_copy(raw)
 
@@ -556,7 +556,7 @@ class Inode:
         return self.inode.i_size
 
     def __repr__(self):
-        if self.inode_idx != None:
+        if self.inode_idx is not None:
             return "{type_name:s}(inode_idx = {inode!r:s}, offset = 0x{offset:X}, volume_uuid = {uuid!r:s})".format(
                 inode=self.inode_idx,
                 offset=self.offset,
@@ -593,7 +593,7 @@ class Inode:
                 # End of ext4_xattr_entry list
                 break
 
-            if not xattr_entry.e_name_index in prefixes:
+            if xattr_entry.e_name_index not in prefixes:
                 raise Ext4Error("Unknown attribute prefix {prefix:d} in inode {inode:d}".format(
                     inode=self.inode_idx,
                     prefix=xattr_entry.e_name_index
@@ -610,7 +610,6 @@ class Inode:
                     raise Ext4Error(
                         "Inode {value_indoe:d} associated with the extended attribute {xattr_name!r:s} of inode {inode:d} is not marked as large extended attribute value.".format(
                             inode=self.inode_idx,
-                            value_inode=xattr_inode.inode_idx,
                             xattr_name=xattr_name
                         ))
 
@@ -654,7 +653,7 @@ class Inode:
             file_name, inode_idx, file_type = next(
                 filter(lambda entry: entry[0] == part, current_inode.open_dir(decode_name)), (None, None, None))
 
-            if inode_idx == None:
+            if inode_idx is None:
                 current_path = "/".join(relative_path[:i])
                 raise FileNotFoundError("{part!r:s} not found in {current_path!r:s} (Inode {inode:d}).".format(
                     current_path=current_path,
@@ -698,12 +697,13 @@ class Inode:
 
     @property
     def mode_str(self):
-        special_flag = lambda letter, execute, special: {
-            (False, False): "-",
-            (False, True): letter.upper(),
-            (True, False): "x",
-            (True, True): letter.lower()
-        }[(execute, special)]
+        def special_flag(letter, execute, special):
+            return {
+                    (False, False): "-",
+                    (False, True): letter.upper(),
+                    (True, False): "x",
+                    (True, True): letter.lower()
+                }[(execute, special)]
 
         try:
             if (self.volume.superblock.s_feature_incompat & ext4_superblock.INCOMPAT_FILETYPE) == 0:
@@ -750,8 +750,9 @@ class Inode:
 
     def open_dir(self, decode_name=None):
         # Parse args
-        if decode_name == None:
-            decode_name = lambda raw: raw.decode("utf-8")
+        if decode_name is None:
+            def decode_name(raw):
+                return raw.decode("utf-8")
             
         if not self.volume.ignore_flags and not self.is_dir:
             raise Ext4Error("Inode ({inode:d}) is not a directory.".format(inode=self.inode_idx))
@@ -941,7 +942,7 @@ class BlockReader:
     def read_block(self, file_block_idx):
         disk_block_idx = self.get_block_mapping(file_block_idx)
 
-        if disk_block_idx != None:
+        if disk_block_idx is not None:
             return self.volume.read(disk_block_idx * self.volume.block_size, self.volume.block_size)
         else:
             return bytes([0] * self.volume.block_size)

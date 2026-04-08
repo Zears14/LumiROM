@@ -19,7 +19,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-      
+
     steps:
 
     - name: Checkout repository
@@ -56,170 +56,43 @@ jobs:
         echo "Updating package lists with apt-fast..."
         sudo apt-fast -y -qq update > apt.log 2>&1 || (cat apt.log && exit 1)
         echo "Installing system dependencies with apt-fast..."
-        sudo apt-fast -y -qq install p7zip-full lz4 android-sdk-libsparse-utils python3 python3-pip zipalign unzip default-jre openjdk-17-jdk brotli e2fsprogs zstd aria2 >> apt.log 2>&1 || (cat apt.log && exit 1)
+        sudo apt-fast -y -qq install p7zip-full lz4 android-sdk-libsparse-utils python3 python3-pip zipalign unzip default-jre openjdk-17-jdk brotli e2fsprogs zstd aria2 xxhash rsync vim-common secilc file tar >> apt.log 2>&1 || (cat apt.log && exit 1)
         echo "Installing Python dependencies..."
         pip3 install -q liblp tgcrypto pyrogram gdown huggingface_hub hf_xet >> pip.log 2>&1 || (cat pip.log && exit 1)
         rm -f apt.log pip.log
         chmod +x bin/erofs-utils/extract.erofs
         chmod +x bin/erofs-utils/mkfs.erofs
 
-    - name: Setup directories
-      run: |
-        chmod +x scripts/setup_directories.sh
-        chmod +x scripts/zip_creation.sh
-        chmod +x scripts/Knox_script.sh
-        bash scripts/setup_directories.sh FIRMWARE WORK OUT
-    
-    - name: Set build environment
-      shell: bash
-      run: |
-        echo "STOCK_DEVICE=${{ github.event.inputs.STOCK_DEVICE }}" >> $GITHUB_ENV
-        echo "USE_UI_8_TETHERING_APEX=${{ github.event.inputs.USE_UI_8_TETHERING_APEX }}" >> $GITHUB_ENV
-        echo "OUTPUT_FILESYSTEM=erofs" >> $GITHUB_ENV
-        echo "LUMIROM_VERSION=8.6.1" >> $GITHUB_ENV
+    - name: Make script executable
+      run: chmod +x make
 
-        echo "OUT_DIR=$PWD/OUT" >> $GITHUB_ENV
-        echo "WORK_DIR=/dev/shm/WORK" >> $GITHUB_ENV
-        echo "FIRM_DIR=$PWD/FIRMWARE" >> $GITHUB_ENV
-        echo "DEVICES_DIR=$PWD/LumiROM/Devices" >> $GITHUB_ENV
-        echo "APKTOOL=$PWD/bin/apktool/apktool.jar" >> $GITHUB_ENV
-        echo "VNDKS_COLLECTION=$PWD/LumiROM/vndks" >> $GITHUB_ENV
-        echo "BUILD_PARTITIONS=product,vendor,odm,system_ext,system" >> $GITHUB_ENV
-        echo "LUMI_VERBOSE=${{ github.event.inputs.VERBOSE }}" >> $GITHUB_ENV
-
-    - name: Check repo
+    - name: Run Python build system
       shell: bash
       env:
+        STOCK_DEVICE: ${{ github.event.inputs.STOCK_DEVICE }}
+        USE_UI_8_TETHERING_APEX: ${{ github.event.inputs.USE_UI_8_TETHERING_APEX }}
+        VERBOSE: ${{ github.event.inputs.VERBOSE }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
         LUMIROM_BUILD: ${{ secrets.LUMIROM_BUILD }}
         OFFICIAL_HASH: ${{ secrets.OFFICIAL_HASH }}
       run: |
-        source scripts/LumiROM.sh
-        IS_OFFICIAL
-
-
-    - name: Download firmware
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        source "$DEVICES_DIR/$STOCK_DEVICE/config"
-        DOWNLOAD_FIRMWARE "$TARGET_DEVICE" "$FIRM_DIR"
-
-    - name: Extract firmware
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        EXTRACT_FIRMWARE "FIRMWARE"
-        PREPARE_PARTITIONS "FIRMWARE"
-        EXTRACT_FIRMWARE_IMG "FIRMWARE"
-
-    - name: Patch and Debloat ROM
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        
-        # Parallel Group 1: Vendor and Stock Config
-        (
-          DISABLE_FBE "FIRMWARE"
-          DISABLE_FDE "FIRMWARE"
-          DELETE_ICCC "FIRMWARE"
-          DEBLOAT_VENDOR "FIRMWARE"
-          PATCH_FSTAB_EROFS "FIRMWARE"
-        ) &
-        
-        # Parallel Group 2: Stock Config and Debloat
-        (
-          APPLY_STOCK_CONFIG "FIRMWARE"
-          DEBLOAT "FIRMWARE"
-        ) &
-        
-        wait
-        echo "Base patches and debloating completed."
-
-    - name: Apply features and LumiBombs
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        
-        # LumiBombs can run in parallel with property updates
-        APPLY_FEATURES "FIRMWARE" &
-        LUMI_BOMBS "FIRMWARE" &
-        
-        wait
-
-    - name: Update Build ID
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        APPENDING_DISPLAY_ID "FIRMWARE"
-
-    - name: Process Frameworks
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        
-        # Install framework-res first (needed for decompile)
-        INSTALL_FRAMEWORK "FIRMWARE/system/system/framework/framework-res.apk"
-        
-        # Start Decompilation in background
-        echo "--- Decompiling framework jars ---"
-        RUN_SILENT java -jar "$APKTOOL" d -f "FIRMWARE/system/system/framework/ssrm.jar" -o "$WORK_DIR/ssrm" &
-        RUN_SILENT java -jar "$APKTOOL" d -f "FIRMWARE/system/system/framework/services.jar" -o "$WORK_DIR/services" &
-        
-        # Wait for decompilation to finish before patching
-        wait
-        
-        # Patch Knox (Very fast sed operations)
-        source scripts/Knox_script.sh
-        PATCH_SSRM "$WORK_DIR/ssrm"
-        PATCH_KNOX_GUARD "$WORK_DIR/services"
-        PATCH_FLAG_SECURE "$WORK_DIR/services"
-        PATCH_SECURE_FOLDER "$WORK_DIR/services"
-        PATCH_PRIVATE_SHARE "$WORK_DIR/services"
-        DISABLE_SIGNATURE_VERIFICATION "$WORK_DIR/services"
-        
-        # Recompile in parallel
-        echo "--- Recompiling framework jars ---"
-        RUN_SILENT java -jar "$APKTOOL" b "$WORK_DIR/ssrm" --copy-original -p "$WORK_DIR" -o "$WORK_DIR/ssrm_built.jar" &
-        RUN_SILENT java -jar "$APKTOOL" b "$WORK_DIR/services" --copy-original -p "$WORK_DIR" -o "$WORK_DIR/services_built.jar" &
-        wait
-        
-        cp -fv "$WORK_DIR"/*_built.jar "FIRMWARE/system/system/framework/"
-        mv "FIRMWARE/system/system/framework/ssrm_built.jar" "FIRMWARE/system/system/framework/ssrm.jar"
-        mv "FIRMWARE/system/system/framework/services_built.jar" "FIRMWARE/system/system/framework/services.jar"
-
-    - name: Build ROM
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        BUILD_IMG "FIRMWARE" "$OUTPUT_FILESYSTEM" "$OUT_DIR"
-
-    - name: Update updater-script
-      shell: bash
-      run: |
-        source scripts/zip_creation.sh
-        # Ensure workspace exists (usually done by BUILD_IMG, but for safety here too)
-        [ -d "$OUT_DIR/ZIP_PACKAGE" ] || (mkdir -p "$OUT_DIR/ZIP_PACKAGE" && cp -rp template/* "$OUT_DIR/ZIP_PACKAGE/")
-        UPDATE_ZIP_SCRIPT "FIRMWARE" "$OUT_DIR/ZIP_PACKAGE"
-        
-    - name: Prepare flashable zip
-      shell: bash
-      run: |
-        source scripts/LumiROM.sh
-        source scripts/zip_creation.sh
-        FLASHABLE_ZIP_CREATION
-
+        FLAGS=(--no-sandbox -d "$STOCK_DEVICE")
+        [ "$VERBOSE" = "true" ] && FLAGS+=(-v)
+        [ "$USE_UI_8_TETHERING_APEX" = "true" ] && FLAGS+=(-t)
+        ./make lumirom "${FLAGS[@]}"
     - name: Upload ROM to Hugging Face
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
         HF_XET_HIGH_PERFORMANCE: "1"
       run: |
         TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-        if [ -f "$OUT_DIR/$ZIP_NAME" ]; then
+        ZIP_NAME=$(ls OUT/*.zip 2>/dev/null | head -1 | xargs basename)
+        if [ -n "$ZIP_NAME" ] && [ -f "OUT/$ZIP_NAME" ]; then
           echo "Uploading $ZIP_NAME..."
-          hf buckets cp "$OUT_DIR/$ZIP_NAME" "hf://buckets/Zears14/lumifiles/out/$TIMESTAMP/$ZIP_NAME"
+          hf buckets cp "OUT/$ZIP_NAME" "hf://buckets/Zears14/lumifiles/out/$TIMESTAMP/$ZIP_NAME"
         else
-          echo "Error: $ZIP_NAME not found in $OUT_DIR!"
-          ls -R "$OUT_DIR"
+          echo "Error: No zip file found in OUT/"
+          ls -R OUT/
           exit 1
         fi
 

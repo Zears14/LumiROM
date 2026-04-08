@@ -1,0 +1,19 @@
+ARG BASE_IMAGE=docker.io/library/alpine:3.20
+FROM ${BASE_IMAGE}
+
+ARG SYSTEM_PACKAGES
+
+RUN if command -v apk >/dev/null 2>&1; then \
+        echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories; \
+        apk add --no-cache ${SYSTEM_PACKAGES}; \
+    elif command -v apt-get >/dev/null 2>&1; then \
+        export DEBIAN_FRONTEND=noninteractive; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends ${SYSTEM_PACKAGES}; \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "Unsupported base image: no apk or apt-get found" >&2; \
+        exit 1; \
+    fi
+
+WORKDIR /workspace

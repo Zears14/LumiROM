@@ -7,7 +7,38 @@
 #====================================================
 
 import os
+import shutil
 import common, blockimgdiff, images, sparse_img
+
+BLOCK_SIZE = 4096
+TRANSFER_BLOCK_LIMIT = 1024
+
+
+def _write_full_transfer_list(prefix, total_blocks):
+    lines = [
+        '4\n',
+        f'{total_blocks}\n',
+        '0\n',
+        '0\n',
+    ]
+    for start in range(0, total_blocks, TRANSFER_BLOCK_LIMIT):
+        end = min(total_blocks, start + TRANSFER_BLOCK_LIMIT)
+        lines.append(f'new 2,{start},{end}\n')
+
+    with open(prefix + '.transfer.list', 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+
+
+def _fast_full_image_convert(input_image, prefix):
+    file_size = os.path.getsize(input_image)
+    if file_size % BLOCK_SIZE != 0:
+        raise ValueError(
+            'Size of file %s must be multiple of %d bytes, but is %d' %
+            (input_image, BLOCK_SIZE, file_size)
+        )
+
+    shutil.copyfile(input_image, prefix + '.new.dat')
+    _write_full_transfer_list(prefix, file_size // BLOCK_SIZE)
 
 def main(INPUT_IMAGE, OUTDIR, CACHE_SIZE, BLOCK_MAP_FILE):
     __version__ = '2.0'
@@ -21,15 +52,13 @@ def main(INPUT_IMAGE, OUTDIR, CACHE_SIZE, BLOCK_MAP_FILE):
 
     common.OPTIONS.cache_size = CACHE_SIZE
 
-    # Get image
     if common.IsSparseImage(INPUT_IMAGE):
         image = sparse_img.SparseImage(INPUT_IMAGE, BLOCK_MAP_FILE, clobbered_blocks='0')
+        # Generate output files
+        b = blockimgdiff.BlockImageDiff(image, version=4, disable_imgdiff=True)
+        b.Compute(OUTDIR)
     else:
-        image = images.FileImage(INPUT_IMAGE)
-
-    # Generate output files
-    b = blockimgdiff.BlockImageDiff(image, version=4, disable_imgdiff=True)
-    b.Compute(OUTDIR)
+        _fast_full_image_convert(INPUT_IMAGE, OUTDIR)
 
     print('Done! Output directory: %s' % os.path.dirname(OUTDIR))
     return

@@ -4,12 +4,14 @@ WORK/
 OUT/
 TMP/
 CACHE/
+.local/
 
 # Logs
 *.log
 apt.log
 pip.log
 apt_fast_setup.log
+logs/
 
 # Python
 __pycache__/

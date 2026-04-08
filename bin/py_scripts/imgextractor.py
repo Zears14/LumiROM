@@ -7,6 +7,7 @@ import traceback
 import shutil
 import re
 import mmap
+import stat
 
 EXT4_HEADER_MAGIC = 0xED26FF3A
 EXT4_SPARSE_HEADER_LEN = 28
@@ -45,6 +46,22 @@ class Extractor(object):
         self.context = []
         self.fsconfig = []
         self.isSAR = False
+        self.preserve_ownership = not hasattr(os, "geteuid") or os.geteuid() == 0
+
+    def __apply_host_metadata(self, path, mode, uid, gid, is_dir=False):
+        safe_mode = int(mode, 8)
+        if not self.preserve_ownership:
+            safe_mode |= stat.S_IRUSR | stat.S_IWUSR
+            if is_dir:
+                safe_mode |= stat.S_IXUSR
+            elif safe_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+                safe_mode |= stat.S_IXUSR
+        os.chmod(path, safe_mode)
+        if self.preserve_ownership:
+            try:
+                os.chown(path, uid, gid)
+            except PermissionError:
+                pass
 
     def __remove(self, path):
         if os.path.isfile(path):
@@ -125,7 +142,9 @@ class Extractor(object):
         return str(s) + str(o) + str(g) + str(w)
 
     def __ext4extractor(self):
-        import ext4, string, struct
+        import ext4
+        import string
+        import struct
         #2021/04/25 -->
         config_dir = os.path.dirname(self.EXTRACT_DIR) + os.sep+ 'config' + os.sep + os.sep
         if not os.path.isdir(config_dir):
@@ -184,8 +203,7 @@ class Extractor(object):
                     if not os.path.isdir(dir_target):
                         os.makedirs(dir_target)
                     if os.name == 'posix':
-                        os.chmod(dir_target, int(mode, 8))
-                        os.chown(dir_target, uid, gid)
+                        self.__apply_host_metadata(dir_target, mode, uid, gid, is_dir=True)
                     scan_dir(entry_inode, entry_inode_path)
                     if cap == '' and con == '':
                         tmppath=self.FileName + entry_inode_path
@@ -258,7 +276,6 @@ class Extractor(object):
                         raw = entry_inode.open_read().read()
                     except:
                         continue
-                    wdone = None
                     file_target = self.EXTRACT_DIR + entry_inode_path.replace('/', os.sep).replace(' ','_')
                     if re.search('/'+self.__file_name(self.FileName)+r'/system/build\.prop', file_target): #30.11.2020
                       self.isSAR = True #30.11.2020
@@ -276,8 +293,7 @@ class Extractor(object):
                             os.makedirs(os.path.dirname(file_target))
                         with open(file_target, 'wb') as out:
                             out.write(raw)
-                        os.chmod(file_target, int(mode, 8))
-                        os.chown(file_target, uid, gid)
+                        self.__apply_host_metadata(file_target, mode, uid, gid)
                     if cap == '' and con == '':
                         tmppath=self.FileName + entry_inode_path
                         if (tmppath).find(' ',1,len(tmppath))>0:
@@ -549,10 +565,10 @@ class Extractor(object):
             if self.context: #11.05.18
                 self.context.sort() #11.05.18
                 
-                if self.isSAR == True:
+                if self.isSAR:
                   self.context.insert(0, '/'+dirr+'/'+' u:object_r:rootfs:s0')
                   self.context.insert(1, '/'+dirr+'(/.*)? u:object_r:rootfs:s0')
-                if self.isSAR == False:
+                if not self.isSAR:
                     for c in self.context:
                         if re.search('^/'+dirr+'/build..prop ', c):
                             self.context.insert(0, '/' + dirr +'(/.*)? ' + c.split(" ")[1])
@@ -613,10 +629,10 @@ class Extractor(object):
         self.OUTPUT_IMAGE_FILE = target.rsplit('.',1)[0] + ".raw.img"
     
     def fixmoto(self, input_file):
-        if os.path.exists(input_file) == False:
+        if not os.path.exists(input_file):
             return
         output_file=input_file + "_"
-        if os.path.exists(output_file) == True:
+        if os.path.exists(output_file):
             try:
                 os.remove(output_file)
             except:
@@ -639,7 +655,7 @@ class Extractor(object):
                 data = f.seek(offset)
                 data = f.read(15360)
                 while data:
-                    devnull = o.write(data)
+                    o.write(data)
                     data = f.read(15360)
         try:
                 os.remove(input_file)

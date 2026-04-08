@@ -32,6 +32,20 @@ It downloads the imgs from the server, and adds the features implemented in the 
 
 This apps will work without installing any module or having root on the device.
 
+## Local Builds
+
+The local build entrypoint is `./make`.
+
+```bash
+./make lumirom -d SM-A325F
+./make lumirom -d SM-A325F --no-sandbox
+./make clean
+```
+
+- By default, builds run inside a Podman-based Alpine sandbox and the sandbox image installs build packages automatically.
+- Use `--no-sandbox` to run directly on the host.
+- Sandboxed builds only require `podman` and `python3` on the host.
+
 ## How to Use:
 #### 1. Fork the Repository
 Give a ⭐ star to the repository.

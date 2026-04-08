@@ -7,7 +7,12 @@ import getpass
 import shutil
 import sys
 
+import logging
+
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s %(message)s")
+    logger = logging.getLogger(__name__)
+
     parser = argparse.ArgumentParser(description="LumiROM Build Synchronization Utility (Hugging Face)")
     parser.add_argument("-t", "--token", help="Hugging Face API Access Token (if not in HF_TOKEN env variable)")
     parser.add_argument("-s", "--source", default="./OUT", help="Source directory (default: ./OUT)")
@@ -17,16 +22,16 @@ def main():
     
     # Check for hf binary
     if not shutil.which("hf"):
-        print("[!] HF CLI tool not found. Install it first.")
+        logger.error("HF CLI tool not found. Install it first.")
         sys.exit(1)
         
     # Handle Token
     token = args.token or os.environ.get("HF_TOKEN")
     if not token:
-        print("HF_TOKEN not found in environment.")
+        logger.warning("HF_TOKEN not found in environment.")
         token = getpass.getpass("Enter HF Access Token: ")
         if not token:
-            print("[!] Token required for upload.")
+            logger.error("Token required for upload.")
             return
         os.environ["HF_TOKEN"] = token
     else:
@@ -38,7 +43,7 @@ def main():
     target_url = f"{args.endpoint}/{date_str}/"
     os.environ["HF_XET_HIGH_PERFORMANCE"] = "1"
 
-    print(f"Syncing {args.source} to {target_url}")
+    logger.info("Syncing %s to %s", args.source, target_url)
 
     # Synchronize
     try:
@@ -46,9 +51,9 @@ def main():
             ["hf", "buckets", "sync", args.source, target_url, "--include", "*.zip"],
             check=True
         )
-        print("Upload complete.")
+        logger.info("Upload complete.")
     except subprocess.CalledProcessError:
-        print("[!] Sync failed. Check network or token permissions.")
+        logger.exception("Sync failed. Check network or token permissions.")
 
 if __name__ == "__main__":
     main()

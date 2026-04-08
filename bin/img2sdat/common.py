@@ -1803,7 +1803,7 @@ def _BuildBootableImage(image_name, sourcedir, fs_config_file,
 
   # Sign the image if vboot is non-empty.
   if info_dict.get("vboot"):
-    path = "/" + partition_name
+    "/" + partition_name
     img_keyblock = tempfile.NamedTemporaryFile()
     # We have switched from the prebuilt futility binary to using the tool
     # (futility-host) built from the source. Override the setting in the old
